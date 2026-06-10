@@ -18,7 +18,7 @@ def test_create_order_returns_201_and_persists(client, sns_mock):
     order = db.session.get(Order, order_id)
 
     # Assert
-    assert response.status_code == 202
+    assert response.status_code == 201
     assert order is not None
     assert order.user_id == 1
 
