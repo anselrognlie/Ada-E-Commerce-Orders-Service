@@ -4,6 +4,7 @@ env:
   variables:
     AWS_DEFAULT_REGION: us-west-2
     IMAGE_REPO_NAME: ecommerce/orders
+    SQLALCHEMY_TEST_DATABASE_URI: "postgresql://test_user:test_pass@localhost:5432/test_db"
 
 phases:
   pre_build:
@@ -12,12 +13,19 @@ phases:
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+      - echo Starting test database... 
+      - docker run -d --name test-db -e POSTGRES_DB=test_db -e POSTGRES_USER=test_user -e POSTGRES_PASSWORD=test_pass -p 5432:5432 public.ecr.aws/docker/library/postgres:15
+      - until docker exec test-db pg_isready -U test_user; do sleep 1; done 
+      - echo Test database ready
 
   build:
     commands:
       - echo Building the Docker image...
       - docker build --platform linux/amd64 --provenance=false -t $REPOSITORY_URI:$IMAGE_TAG .
       - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+      - echo Running tests... 
+      - pip install -r requirements.txt 
+      - pytest
 
   post_build:
     commands:
@@ -26,6 +34,7 @@ phases:
       - docker push $REPOSITORY_URI:latest
       - echo Writing image definitions file...
       - printf '[{"name":"orders","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+      - docker stop test-db && docker rm test-db 
 
 artifacts:
   files:
